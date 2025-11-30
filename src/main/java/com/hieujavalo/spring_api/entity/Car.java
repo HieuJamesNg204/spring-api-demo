@@ -1,49 +1,27 @@
 package com.hieujavalo.spring_api.entity;
 
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Entity
+@Table(name = "car")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class Car {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(nullable = false)
     private String make;
+
+    @Column(nullable = false)
     private String model;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "body_type_id", nullable = false)
     private BodyType bodyType;
-
-    public Car() {}
-
-    public Car(Long id, String make, String model, BodyType bodyType) {
-        this.id = id;
-        this.make = make;
-        this.model = model;
-        this.bodyType = bodyType;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getMake() {
-        return make;
-    }
-
-    public void setMake(String make) {
-        this.make = make;
-    }
-
-    public String getModel() {
-        return model;
-    }
-
-    public void setModel(String model) {
-        this.model = model;
-    }
-
-    public BodyType getBodyType() {
-        return bodyType;
-    }
-
-    public void setBodyType(BodyType bodyType) {
-        this.bodyType = bodyType;
-    }
 }
