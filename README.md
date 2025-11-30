@@ -17,9 +17,9 @@ Next, add a dependency to pom.xml
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.hieujavalo</groupId>
-	<artifactId>spring_boot_api</artifactId>
+	<artifactId>spring_api</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>spring_boot_api</name>
+	<name>spring_api</name>
 	<description>Demo project for Spring Boot</description>
 	<url/>
 	<licenses>
@@ -60,7 +60,7 @@ Organise your project as below
 ```
 main/
 ├── java/
-│   └── com/hieujavalo/spring_boot_api/
+│   └── com/hieujavalo/spring_api/
 │       ├── controller/
 │       │   ├── BodyTypeController.java
 │       │   └── CarController.java
@@ -81,7 +81,7 @@ main/
 Define BodyType and Car. First, the project will use in-memory data storage, and database will be implemented later.
 **entity/BodyType.java**
 ```java
-package com.hieujavalo.spring_boot_api.entity;
+package com.hieujavalo.spring_api.entity;
 
 public class BodyType {
     private Long id;
@@ -113,7 +113,7 @@ public class BodyType {
 ```
 **entity/Car.java**
 ```java
-package com.hieujavalo.spring_boot_api.entity;
+package com.hieujavalo.spring_api.entity;
 
 public class Car {
     private Long id;
@@ -167,9 +167,9 @@ public class Car {
 Define repository for saving data.
 **repository/BodyTypeRepository.java**
 ```java
-package com.hieujavalo.spring_boot_api.repository;
+package com.hieujavalo.spring_api.repository;
 
-import com.hieujavalo.spring_boot_api.entity.BodyType;
+import com.hieujavalo.spring_api.entity.BodyType;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
@@ -206,9 +206,9 @@ public class BodyTypeRepository {
 ```
 **repository/CarRepository.java**
 ```java
-package com.hieujavalo.spring_boot_api.repository;
+package com.hieujavalo.spring_api.repository;
 
-import com.hieujavalo.spring_boot_api.entity.Car;
+import com.hieujavalo.spring_api.entity.Car;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
@@ -246,10 +246,10 @@ public class CarRepository {
 ## Step 5: Create services
 **service/BodyTypeService.java**
 ```java
-package com.hieujavalo.spring_boot_api.service;
+package com.hieujavalo.spring_api.service;
 
-import com.hieujavalo.spring_boot_api.entity.BodyType;
-import com.hieujavalo.spring_boot_api.repository.BodyTypeRepository;
+import com.hieujavalo.spring_api.entity.BodyType;
+import com.hieujavalo.spring_api.repository.BodyTypeRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -287,10 +287,10 @@ public class BodyTypeService {
 ```
 **service/CarService.java**
 ```java
-package com.hieujavalo.spring_boot_api.service;
+package com.hieujavalo.spring_api.service;
 
-import com.hieujavalo.spring_boot_api.entity.Car;
-import com.hieujavalo.spring_boot_api.repository.CarRepository;
+import com.hieujavalo.spring_api.entity.Car;
+import com.hieujavalo.spring_api.repository.CarRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -330,10 +330,10 @@ public class CarService {
 Define controllers with mapping.
 **controller/BodyTypeController.java**
 ```java
-package com.hieujavalo.spring_boot_api.controller;
+package com.hieujavalo.spring_api.controller;
 
-import com.hieujavalo.spring_boot_api.entity.BodyType;
-import com.hieujavalo.spring_boot_api.service.BodyTypeService;
+import com.hieujavalo.spring_api.entity.BodyType;
+import com.hieujavalo.spring_api.service.BodyTypeService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -385,10 +385,10 @@ public class BodyTypeController {
 ```
 **controller/CarController.java**
 ```java
-package com.hieujavalo.spring_boot_api.controller;
+package com.hieujavalo.spring_api.controller;
 
-import com.hieujavalo.spring_boot_api.entity.Car;
-import com.hieujavalo.spring_boot_api.service.CarService;
+import com.hieujavalo.spring_api.entity.Car;
+import com.hieujavalo.spring_api.service.CarService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
