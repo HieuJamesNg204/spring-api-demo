@@ -1,6 +1,7 @@
 # 1. Basic Spring Boot
 ## Step 1: Set up the project
-First, go to [Spring Initializr](spring.application.name=spring_api) to initialise a new project
+First, go to [Spring Initializr](spring.application.name=spring_api) to initialise a new project.
+<img width="752" height="871" alt="image" src="https://github.com/user-attachments/assets/e848cc74-1173-42fe-b9dd-49c8bdae5583" />
 
 After clicking the generate button, save the project anywhere you want. Then, open IntelliJ IDEA, and open the project you've saved.
 Next, add a dependency to pom.xml
