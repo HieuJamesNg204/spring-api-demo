@@ -97,7 +97,7 @@ public class Car {
     private BodyType bodyType;
 }
 ```
-## Step 6: Create DTOs
+## Step 4: Create DTOs
 Create DTOs to handle requests and responses better.
 **dto/CreateBodyTypeRequest.java**
 ```java
