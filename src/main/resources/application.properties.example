@@ -8,3 +8,6 @@ spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
 spring.jpa.hibernate.ddl-auto=update
 spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect
 spring.jpa.show-sql=false
+
+jwt.secret=[your_secret_key]
+jwt.expiration=86400000
