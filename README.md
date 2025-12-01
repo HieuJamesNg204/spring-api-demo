@@ -24,7 +24,14 @@ First, add the following dependencies that we need to **pom.xml**:
     <scope>runtime</scope>
 </dependency>
 ```
-## Step 2: Create User Entity
+## Step 2: Update application.properties
+Add the following lines to **main/resources/application.properties**
+```
+jwt.secret=[your_secret_key]
+jwt.expiration=86400000
+```
+Replace ```[your_secret_key]``` with your 256-bit secret key
+## Step 3: Create User Entity
 Add a ```User``` entity to handle user data and authentication.
 **entity/User.java**
 ```java
@@ -55,7 +62,7 @@ public class User {
     private String email;
 }
 ```
-## Step 3: Create User repository
+## Step 4: Create User repository
 Add ```UserRepository``` to interact with ```user``` table in database.
 **repository/UserRepository.java**
 ```java
@@ -74,7 +81,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByEmail(String email);
 }
 ```
-## Step 4: Create DTOs
+## Step 5: Create DTOs
 Create DTOs to handle user requests and responses.
 **dto/RegisterRequest.java**
 ```java
@@ -156,7 +163,7 @@ public class ProfileResponse {
     private String email;
 }
 ```
-## Step 5: Create a utilisation class for JWT
+## Step 6: Create a utilisation class for JWT
 Create a utilisation class for JWT to handle tokens.
 **util/JwtUtil.java**
 ```java
@@ -223,7 +230,7 @@ public class JwtUtil {
     }
 }
 ```
-## Step 6: Create a filter
+## Step 7: Create a filter
 Create ```JwtAuthenticationFilter``` to authenticate users with a header
 **filter/JwtAuthenticationFilter.java**
 ```java
@@ -278,7 +285,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 }
 ```
-## Step 7: Configure security
+## Step 8: Configure security
 First, create a class to use ```401 Unauthorized``` status code for unauthenticated access.
 **config/BodyTypeService.java**
 ```java
@@ -349,7 +356,7 @@ public class SecurityConfig {
     }
 }
 ```
-## Step 8: Create authentication service
+## Step 9: Create authentication service
 Create authentication service to handle login and register logics.
 **service/AuthService.java**
 ```java
@@ -406,7 +413,7 @@ public class AuthService {
     }
 }
 ```
-## Step 9: Create authentication controller
+## Step 10: Create authentication controller
 Create an authentication controller to handle input.
 **controller/AuthController.java**
 ```java
@@ -451,5 +458,5 @@ public class AuthController {
     }
 }
 ```
-## Step 10: Run application
+## Step 11: Run application
 Now open **SpringBootApiApplication.java** and click the triangle button to run.
