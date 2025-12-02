@@ -28,4 +28,13 @@ public class User {
     @Column(nullable = false)
     @Enumerated(EnumType.STRING)
     private Role role;
+
+    @Column
+    private String verificationCode;
+
+    @Column
+    private Long verificationCodeGeneratedAt;
+
+    @Column
+    private boolean isEnabled = false; // default false
 }
