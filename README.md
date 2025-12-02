@@ -1,42 +1,22 @@
-# 3. Implementing authentication
-## Step 1: Add some dependencies
-First, add the following dependencies that we need to **pom.xml**:
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-security</artifactId>
-</dependency>
-<dependency>
-    <groupId>io.jsonwebtoken</groupId>
-    <artifactId>jjwt-api</artifactId>
-    <version>0.12.3</version>
-</dependency>
-<dependency>
-    <groupId>io.jsonwebtoken</groupId>
-    <artifactId>jjwt-impl</artifactId>
-    <version>0.12.3</version>
-    <scope>runtime</scope>
-</dependency>
-<dependency>
-    <groupId>io.jsonwebtoken</groupId>
-    <artifactId>jjwt-jackson</artifactId>
-    <version>0.12.3</version>
-    <scope>runtime</scope>
-</dependency>
+# 4. Adding user roles
+## Step 1: Create Role enum
+Create an enum to define two roles ```ADMIN``` and ```CUSTOMER```.
+**enums/Role.java**
+```java
+package com.hieujavalo.spring_api.enums;
+
+public enum Role {
+    ADMIN,
+    CUSTOMER
+}
 ```
-## Step 2: Update application.properties
-Add the following lines to **main/resources/application.properties**
-```
-jwt.secret=[your_secret_key]
-jwt.expiration=86400000
-```
-Replace ```[your_secret_key]``` with your 256-bit secret key
-## Step 3: Create User Entity
-Add a ```User``` entity to handle user data and authentication.
+## Step 2: Update User entity
+Add a ```role``` attribute for ```User```.
 **entity/User.java**
 ```java
 package com.hieujavalo.spring_api.entity;
 
+import com.hieujavalo.spring_api.enums.Role;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -60,33 +40,19 @@ public class User {
 
     @Column(unique = true, nullable = false)
     private String email;
+
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private Role role;
 }
 ```
-## Step 4: Create User repository
-Add ```UserRepository``` to interact with ```user``` table in database.
-**repository/UserRepository.java**
-```java
-package com.hieujavalo.spring_api.repository;
-
-import com.hieujavalo.spring_api.entity.User;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
-
-import java.util.Optional;
-
-@Repository
-public interface UserRepository extends JpaRepository<User, Long> {
-    Optional<User> findByUsername(String username);
-    boolean existsByUsername(String username);
-    boolean existsByEmail(String email);
-}
-```
-## Step 5: Create DTOs
-Create DTOs to handle user requests and responses.
+## Step 3: Update DTOs
+Update DTOs with ```role``` added.
 **dto/RegisterRequest.java**
 ```java
 package com.hieujavalo.spring_api.dto;
 
+import com.hieujavalo.spring_api.enums.Role;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -108,32 +74,15 @@ public class RegisterRequest {
     @NotBlank(message = "Password is required")
     @Size(min = 8, message = "Password must be at least 8 characters long")
     private String password;
-}
-```
-**dto/LoginRequest.java**
-```java
-package com.hieujavalo.spring_api.dto;
 
-import jakarta.validation.constraints.NotBlank;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class LoginRequest {
-    @NotBlank(message = "Username is required")
-    private String username;
-
-    @NotBlank(message = "Password is required")
-    private String password;
+    private Role role; // Only admins can set this
 }
 ```
 **dto/AuthResponse.java**
 ```java
 package com.hieujavalo.spring_api.dto;
 
+import com.hieujavalo.spring_api.enums.Role;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -144,6 +93,7 @@ import lombok.NoArgsConstructor;
 public class AuthResponse {
     private String token;
     private String username;
+    private Role role;
     private String message;
 }
 ```
@@ -151,6 +101,7 @@ public class AuthResponse {
 ```java
 package com.hieujavalo.spring_api.dto;
 
+import com.hieujavalo.spring_api.enums.Role;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -161,14 +112,16 @@ import lombok.NoArgsConstructor;
 public class ProfileResponse {
     private String username;
     private String email;
+    private Role role;
 }
 ```
-## Step 6: Create a utilisation class for JWT
-Create a utilisation class for JWT to handle tokens.
+## Step 4: Update JWT utilisation
+Update JWT utilisation to handle roles.
 **util/JwtUtil.java**
 ```java
 package com.hieujavalo.spring_api.util;
 
+import com.hieujavalo.spring_api.entity.User;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
@@ -193,9 +146,10 @@ public class JwtUtil {
         return Keys.hmacShaKeyFor(decodedKey);
     }
 
-    public String generateToken(String username) {
+    public String generateToken(User user) {
         return Jwts.builder()
-                .subject(username)
+                .subject(user.getUsername())
+                .claim("role", user.getRole().name())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expiration))
                 .signWith(getSigningKey())
@@ -216,6 +170,20 @@ public class JwtUtil {
         }
     }
 
+    public String extractRole(String token) {
+        try {
+            return Jwts.parser()
+                    .verifyWith(getSigningKey())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload()
+                    .get("role", String.class);
+        } catch (Exception e) {
+            log.error("Error extracting role from token", e);
+            return null;
+        }
+    }
+
     public boolean validateToken(String token) {
         try {
             Jwts.parser()
@@ -230,8 +198,8 @@ public class JwtUtil {
     }
 }
 ```
-## Step 7: Create a filter
-Create ```JwtAuthenticationFilter``` to authenticate users with a header
+## Step 5: Update authentication filter
+Update ```JwtAuthenticationFilter``` to set role authorities.
 **filter/JwtAuthenticationFilter.java**
 ```java
 package com.hieujavalo.spring_api.filter;
@@ -246,12 +214,13 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.List;
 
 @Component
 @Slf4j
@@ -270,10 +239,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String token = authHeader.substring(7);
                 if (jwtUtil.validateToken(token)) {
                     String username = jwtUtil.extractUsername(token);
+                    String roleStr = jwtUtil.extractRole(token);
                     User user = userRepository.findByUsername(username).orElse(null);
                     if (user != null) {
-                        UsernamePasswordAuthenticationToken auth
-                                = new UsernamePasswordAuthenticationToken(user, null, new ArrayList<>());
+                        List<SimpleGrantedAuthority> authorities = List.of(
+                                new SimpleGrantedAuthority("ROLE_" + roleStr)
+                        );
+                        UsernamePasswordAuthenticationToken auth =
+                                new UsernamePasswordAuthenticationToken(user, null, authorities);
                         SecurityContextHolder.getContext().setAuthentication(auth);
                     }
                 }
@@ -285,32 +258,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 }
 ```
-## Step 8: Configure security
-First, create a class to use ```401 Unauthorized``` status code for unauthenticated access.
-**config/BodyTypeService.java**
-```java
-package com.hieujavalo.spring_api.config;
-
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.web.AuthenticationEntryPoint;
-import org.springframework.stereotype.Component;
-import java.io.IOException;
-
-@Component
-public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
-    @Override
-    public void commence(HttpServletRequest request, HttpServletResponse response,
-                         AuthenticationException authException) throws IOException {
-        response.setContentType("application/json");
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED); // Sets 401 status code
-        response.getOutputStream().println("{ \"error\": \"Unauthorized\", \"message\": \""
-                + authException.getMessage() + "\" }");
-    }
-}
-```
-Then create ```SecurityConfig``` class to configure security rules.
+## Step 6: Update SecurityConfig
+Update ```SecurityConfig``` to add role-based access.
 **config/SecurityConfig.java**
 ```java
 package com.hieujavalo.spring_api.config;
@@ -320,6 +269,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -330,6 +280,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final JwtAuthenticationEntryPoint unauthorizedHandler;
@@ -343,6 +294,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/auth/profile").authenticated()
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/**").permitAll()
@@ -352,12 +304,13 @@ public class SecurityConfig {
                         .authenticationEntryPoint(unauthorizedHandler)
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
         return http.build();
     }
 }
 ```
-## Step 9: Create authentication service
-Create authentication service to handle login and register logics.
+## Step 7: Update authentication service
+Add a parameter ```isAdmin``` to ```AuthService.register()``` to indicate if the request is coming from an admin endpoint, or check the authenticated user role
 **service/AuthService.java**
 ```java
 package com.hieujavalo.spring_api.service;
@@ -366,6 +319,7 @@ import com.hieujavalo.spring_api.dto.AuthResponse;
 import com.hieujavalo.spring_api.dto.LoginRequest;
 import com.hieujavalo.spring_api.dto.RegisterRequest;
 import com.hieujavalo.spring_api.entity.User;
+import com.hieujavalo.spring_api.enums.Role;
 import com.hieujavalo.spring_api.repository.UserRepository;
 import com.hieujavalo.spring_api.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
@@ -381,7 +335,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
 
-    public AuthResponse register(RegisterRequest request) {
+    public AuthResponse register(RegisterRequest request, boolean isAdmin) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new IllegalArgumentException("Username already exists");
         }
@@ -395,8 +349,14 @@ public class AuthService {
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
 
+        if (isAdmin && request.getRole() != null) {
+            user.setRole(request.getRole());
+        } else {
+            user.setRole(Role.CUSTOMER);
+        }
+
         userRepository.save(user);
-        return new AuthResponse(null, request.getUsername(),
+        return new AuthResponse(null, request.getUsername(), user.getRole(),
                 "Registration successful. Please log in!");
     }
 
@@ -408,13 +368,13 @@ public class AuthService {
             throw new IllegalArgumentException("Invalid credentials");
         }
 
-        String token = jwtUtil.generateToken(user.getUsername());
-        return new AuthResponse(token, user.getUsername(), "Login successful!");
+        String token = jwtUtil.generateToken(user);
+        return new AuthResponse(token, user.getUsername(), user.getRole(), "Login successful!");
     }
 }
 ```
-## Step 10: Create authentication controller
-Create an authentication controller to handle input.
+## Step 8: Update controllers
+Update the controllers to create a new endpoint for admin registration, and to protect some routes with role check.
 **controller/AuthController.java**
 ```java
 package com.hieujavalo.spring_api.controller;
@@ -429,6 +389,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -441,7 +402,14 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
-        AuthResponse response = authService.register(request);
+        AuthResponse response = authService.register(request, false);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/admin/register")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<AuthResponse> registerAdmin(@Valid @RequestBody RegisterRequest request) {
+        AuthResponse response = authService.register(request, true);
         return ResponseEntity.ok(response);
     }
 
@@ -453,10 +421,128 @@ public class AuthController {
 
     @GetMapping("/profile")
     public ResponseEntity<ProfileResponse> getProfile(@AuthenticationPrincipal User user) {
-        ProfileResponse response = new ProfileResponse(user.getUsername(), user.getEmail());
+        ProfileResponse response = new ProfileResponse(user.getUsername(), user.getEmail(), user.getRole());
         return ResponseEntity.ok(response);
     }
 }
 ```
-## Step 11: Run application
+**controller/BodyTypeController.java**
+```java
+package com.hieujavalo.spring_api.controller;
+
+import com.hieujavalo.spring_api.dto.BodyTypeResponse;
+import com.hieujavalo.spring_api.dto.CreateBodyTypeRequest;
+import com.hieujavalo.spring_api.dto.UpdateBodyTypeRequest;
+import com.hieujavalo.spring_api.service.BodyTypeService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/v1/bodytypes")
+@RequiredArgsConstructor
+@Slf4j
+public class BodyTypeController {
+    private final BodyTypeService bodyTypeService;
+
+    @GetMapping
+    public ResponseEntity<List<BodyTypeResponse>> getAllBodyTypes() {
+        List<BodyTypeResponse> bodyTypes = bodyTypeService.getAllBodyTypes();
+        return ResponseEntity.ok(bodyTypes);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<BodyTypeResponse> getBodyTypeById(@PathVariable Long id) {
+        BodyTypeResponse bodyType = bodyTypeService.getBodyTypeById(id);
+        return ResponseEntity.ok(bodyType);
+    }
+
+    @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BodyTypeResponse> addBodyType(@Valid @RequestBody CreateBodyTypeRequest request) {
+        BodyTypeResponse response = bodyTypeService.addBodyType(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BodyTypeResponse> updateBodyType(@PathVariable Long id, @RequestBody UpdateBodyTypeRequest request) {
+        BodyTypeResponse response = bodyTypeService.updateBodyType(id, request);
+        return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('ADMIN')")
+    public void deleteBodyType(@PathVariable Long id) {
+        bodyTypeService.deleteBodyType(id);
+    }
+}
+```
+**controller/CarController.java**
+```java
+package com.hieujavalo.spring_api.controller;
+
+import com.hieujavalo.spring_api.dto.CarResponse;
+import com.hieujavalo.spring_api.dto.CreateCarRequest;
+import com.hieujavalo.spring_api.dto.UpdateCarRequest;
+import com.hieujavalo.spring_api.service.CarService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/v1/cars")
+@RequiredArgsConstructor
+@Slf4j
+public class CarController {
+    private final CarService carService;
+
+    @GetMapping
+    public ResponseEntity<List<CarResponse>> getAllCars() {
+        List<CarResponse> cars = carService.getAllCars();
+        return ResponseEntity.ok(cars);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<CarResponse> getCarById(@PathVariable Long id) {
+        CarResponse car = carService.getCarById(id);
+        return ResponseEntity.ok(car);
+    }
+
+    @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<CarResponse> addCar(@Valid @RequestBody CreateCarRequest request) {
+        CarResponse response = carService.addCar(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<CarResponse> updateCar(@PathVariable Long id, @RequestBody UpdateCarRequest request) {
+        CarResponse response = carService.updateCar(id, request);
+        return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('ADMIN')")
+    public void deleteCar(@PathVariable Long id) {
+        carService.deleteCar(id);
+    }
+}
+```
+## Step 9: Run application
 Now open **SpringBootApiApplication.java** and click the triangle button to run.

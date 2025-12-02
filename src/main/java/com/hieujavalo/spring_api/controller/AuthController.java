@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,7 +23,14 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
-        AuthResponse response = authService.register(request);
+        AuthResponse response = authService.register(request, false);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/admin/register")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<AuthResponse> registerAdmin(@Valid @RequestBody RegisterRequest request) {
+        AuthResponse response = authService.register(request, true);
         return ResponseEntity.ok(response);
     }
 
@@ -34,7 +42,7 @@ public class AuthController {
 
     @GetMapping("/profile")
     public ResponseEntity<ProfileResponse> getProfile(@AuthenticationPrincipal User user) {
-        ProfileResponse response = new ProfileResponse(user.getUsername(), user.getEmail());
+        ProfileResponse response = new ProfileResponse(user.getUsername(), user.getEmail(), user.getRole());
         return ResponseEntity.ok(response);
     }
 }

@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -33,12 +34,14 @@ public class BodyTypeController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BodyTypeResponse> addBodyType(@Valid @RequestBody CreateBodyTypeRequest request) {
         BodyTypeResponse response = bodyTypeService.addBodyType(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BodyTypeResponse> updateBodyType(@PathVariable Long id, @RequestBody UpdateBodyTypeRequest request) {
         BodyTypeResponse response = bodyTypeService.updateBodyType(id, request);
         return ResponseEntity.ok(response);
@@ -46,6 +49,7 @@ public class BodyTypeController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('ADMIN')")
     public void deleteBodyType(@PathVariable Long id) {
         bodyTypeService.deleteBodyType(id);
     }

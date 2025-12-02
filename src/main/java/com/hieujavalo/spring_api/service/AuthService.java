@@ -4,6 +4,7 @@ import com.hieujavalo.spring_api.dto.AuthResponse;
 import com.hieujavalo.spring_api.dto.LoginRequest;
 import com.hieujavalo.spring_api.dto.RegisterRequest;
 import com.hieujavalo.spring_api.entity.User;
+import com.hieujavalo.spring_api.enums.Role;
 import com.hieujavalo.spring_api.repository.UserRepository;
 import com.hieujavalo.spring_api.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +20,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
 
-    public AuthResponse register(RegisterRequest request) {
+    public AuthResponse register(RegisterRequest request, boolean isAdmin) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new IllegalArgumentException("Username already exists");
         }
@@ -33,8 +34,14 @@ public class AuthService {
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
 
+        if (isAdmin && request.getRole() != null) {
+            user.setRole(request.getRole());
+        } else {
+            user.setRole(Role.CUSTOMER);
+        }
+
         userRepository.save(user);
-        return new AuthResponse(null, request.getUsername(),
+        return new AuthResponse(null, request.getUsername(), user.getRole(),
                 "Registration successful. Please log in!");
     }
 
@@ -46,7 +53,7 @@ public class AuthService {
             throw new IllegalArgumentException("Invalid credentials");
         }
 
-        String token = jwtUtil.generateToken(user.getUsername());
-        return new AuthResponse(token, user.getUsername(), "Login successful!");
+        String token = jwtUtil.generateToken(user);
+        return new AuthResponse(token, user.getUsername(), user.getRole(), "Login successful!");
     }
 }

@@ -1,5 +1,6 @@
 package com.hieujavalo.spring_api.util;
 
+import com.hieujavalo.spring_api.entity.User;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
@@ -24,9 +25,10 @@ public class JwtUtil {
         return Keys.hmacShaKeyFor(decodedKey);
     }
 
-    public String generateToken(String username) {
+    public String generateToken(User user) {
         return Jwts.builder()
-                .subject(username)
+                .subject(user.getUsername())
+                .claim("role", user.getRole().name())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expiration))
                 .signWith(getSigningKey())
@@ -43,6 +45,20 @@ public class JwtUtil {
                     .getSubject();
         } catch (Exception e) {
             log.error("Error extracting username from token", e);
+            return null;
+        }
+    }
+
+    public String extractRole(String token) {
+        try {
+            return Jwts.parser()
+                    .verifyWith(getSigningKey())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload()
+                    .get("role", String.class);
+        } catch (Exception e) {
+            log.error("Error extracting role from token", e);
             return null;
         }
     }

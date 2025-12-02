@@ -1,5 +1,6 @@
 package com.hieujavalo.spring_api.entity;
 
+import com.hieujavalo.spring_api.enums.Role;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -23,4 +24,8 @@ public class User {
 
     @Column(unique = true, nullable = false)
     private String email;
+
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private Role role;
 }
