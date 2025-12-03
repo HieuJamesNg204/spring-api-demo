@@ -1,62 +1,13 @@
-# 7. Reset Password
-## Step 1: Update user entity
-Update ```User``` class to add more fields related to password reset.
-**entity/User.java**
-```java
-package com.hieujavalo.spring_api.entity;
-
-import com.hieujavalo.spring_api.enums.Role;
-import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-@Entity
-@Table(name = "user")
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class User {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(unique = true, nullable = false)
-    private String username;
-
-    @Column(nullable = false)
-    private String password;
-
-    @Column(unique = true, nullable = false)
-    private String email;
-
-    @Column(nullable = false)
-    @Enumerated(EnumType.STRING)
-    private Role role;
-
-    @Column
-    private String verificationCode;
-
-    @Column
-    private Long verificationCodeGeneratedAt;
-
-    @Column
-    private String resetPasswordCode;
-
-    @Column
-    private Long resetPasswordCodeGeneratedAt;
-
-    @Column
-    private boolean isEnabled = false; // default false
-}
-```
-## Step 2: Create a new DTO
-Create a new DTO to handle password reset request.
-**dto/ResetPasswordRequest.java**
+# 8. Develop user management for admins
+## Step 1: Update and create DTOs
+First, remove the ```role``` field in ```RegisterRequest```.
+**dto/RegisterRequest.java**
 ```java
 package com.hieujavalo.spring_api.dto;
 
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -64,38 +15,101 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ResetPasswordRequest {
-    @NotBlank(message = "Code is required")
-    private String code;
+public class RegisterRequest {
+    @NotBlank(message = "Username is required")
+    private String username;
+
+    @NotBlank(message = "Email is required")
+    @Email
+    private String email;
 
     @NotBlank(message = "Password is required")
+    @Size(min = 8, message = "Password must be at least 8 characters long")
     private String password;
 }
 ```
-## Step 3: Update user repository
-Update ```UserRepository``` to add a new method to find a user by reset code.
-**repository/UserRepository.java**
+After that, create new DTOs to handle requests and responses related to creation and update of users.
+**dto/CreateUserRequest.java**
 ```java
-package com.hieujavalo.spring_api.repository;
+package com.hieujavalo.spring_api.dto;
 
-import com.hieujavalo.spring_api.entity.User;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
+import com.hieujavalo.spring_api.enums.Role;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-import java.util.Optional;
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class CreateUserRequest {
+    @NotBlank(message = "Username is required")
+    private String username;
 
-@Repository
-public interface UserRepository extends JpaRepository<User, Long> {
-    Optional<User> findByUsername(String username);
-    Optional<User> findByEmail(String email);
-    boolean existsByUsername(String username);
-    boolean existsByEmail(String email);
-    Optional<User> findByVerificationCode(String code);
-    Optional<User> findByResetPasswordCode(String code);
+    @NotBlank(message = "Email is required")
+    @Email
+    private String email;
+
+    @NotBlank(message = "Password is required")
+    @Size(min = 8, message = "Password must be at least 8 characters long")
+    private String password;
+
+    @NotNull(message = "Role is required")
+    private Role role;
 }
 ```
-## Step 4: Update authentication service
-Update ```AuthService``` class to handle password reset logic.
+**dto/UpdateUserRequest.java**
+```java
+package com.hieujavalo.spring_api.dto;
+
+import com.hieujavalo.spring_api.enums.Role;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class UpdateUserRequest {
+    private String email;
+    private String password;
+    private Role role;
+}
+```
+**dto/UserResponse.java**
+```java
+package com.hieujavalo.spring_api.dto;
+
+import com.hieujavalo.spring_api.entity.User;
+import com.hieujavalo.spring_api.enums.Role;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class UserResponse {
+    private Long id;
+    private String username;
+    private String email;
+    private Role role;
+
+    public static UserResponse fromUser(User user) {
+        return new UserResponse(
+                user.getId(),
+                user.getUsername(),
+                user.getEmail(),
+                user.getRole()
+        );
+    }
+}
+```
+## Step 2: Update services
+Next, update ```AuthService.register()``` to reserve it only for public registration.
 **service/AuthService.java**
 ```java
 package com.hieujavalo.spring_api.service;
@@ -124,7 +138,7 @@ public class AuthService {
     private final EmailService emailService;
     private static final long CODE_EXPIRATION_MS = 10 * 60 * 1000; // 10 minutes
 
-    public AuthResponse register(RegisterRequest request, boolean isAdmin) {
+    public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new IllegalArgumentException("Username already exists");
         }
@@ -137,18 +151,13 @@ public class AuthService {
         user.setUsername(request.getUsername());
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setRole(Role.CUSTOMER);
         user.setEnabled(false); // disable until confirmed
 
         // Generate 6-digit numeric verification code
         String code = String.format("%06d", new Random().nextInt(1000000));
         user.setVerificationCode(code);
         user.setVerificationCodeGeneratedAt(System.currentTimeMillis());
-
-        if (isAdmin && request.getRole() != null) {
-            user.setRole(request.getRole());
-        } else {
-            user.setRole(Role.CUSTOMER);
-        }
 
         userRepository.save(user);
 
@@ -268,8 +277,87 @@ public class AuthService {
     }
 }
 ```
-## Step 5: Update authentication controller
-Lastly, update the authentication controller to add new endpoints for resetting passwords.
+Subsequently, create a new service to handle user management logics.
+```java
+package com.hieujavalo.spring_api.service;
+
+import com.hieujavalo.spring_api.dto.CreateUserRequest;
+import com.hieujavalo.spring_api.dto.UpdateUserRequest;
+import com.hieujavalo.spring_api.dto.UserResponse;
+import com.hieujavalo.spring_api.entity.User;
+import com.hieujavalo.spring_api.exception.ResourceNotFoundException;
+import com.hieujavalo.spring_api.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+@Slf4j
+@RequiredArgsConstructor
+public class UserService {
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    public List<UserResponse> getAllUsers() {
+        return userRepository.findAll()
+                .stream()
+                .map(UserResponse::fromUser)
+                .collect(Collectors.toList());
+    }
+
+    public UserResponse getUserById(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return UserResponse.fromUser(user);
+    }
+
+    public UserResponse addUser(CreateUserRequest request) {
+        System.out.println(request.getRole());
+
+        User user = new User();
+        user.setUsername(request.getUsername());
+        user.setEmail(request.getEmail());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setRole(request.getRole());
+        user.setEnabled(true);
+
+        User savedUser = userRepository.save(user);
+        return UserResponse.fromUser(savedUser);
+    }
+
+    public UserResponse updateUser(Long id, UpdateUserRequest request) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (request.getEmail() != null && !request.getEmail().isBlank()) {
+            user.setEmail(request.getEmail());
+        }
+
+        if (request.getRole() != null) {
+            user.setRole(request.getRole());
+        }
+
+        if (request.getPassword() != null && !request.getPassword().isBlank()) {
+            user.setPassword(passwordEncoder.encode(request.getPassword()));
+        }
+
+        User savedUser = userRepository.save(user);
+        return UserResponse.fromUser(savedUser);
+    }
+
+    public void deleteUser(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        userRepository.delete(user);
+    }
+}
+```
+## Step 3: Update controllers
+As we've modified ```AuthService```, we also need to modify ```AuthController```.
 **controller/AuthController.java**
 ```java
 package com.hieujavalo.spring_api.controller;
@@ -281,7 +369,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -294,14 +381,7 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
-        AuthResponse response = authService.register(request, false);
-        return ResponseEntity.ok(response);
-    }
-
-    @PostMapping("/admin/register")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<AuthResponse> registerAdmin(@Valid @RequestBody RegisterRequest request) {
-        AuthResponse response = authService.register(request, true);
+        AuthResponse response = authService.register(request);
         return ResponseEntity.ok(response);
     }
 
@@ -348,5 +428,60 @@ public class AuthController {
     }
 }
 ```
-## Step 6: Run application
-Now run your Spring application to test the newly added feature.
+Lastly, create create a dedicated controller with one class-level security rule just for admins.
+**controller/AdminUserController.java**
+```java
+package com.hieujavalo.spring_api.controller;
+
+import com.hieujavalo.spring_api.dto.CreateUserRequest;
+import com.hieujavalo.spring_api.dto.UpdateUserRequest;
+import com.hieujavalo.spring_api.dto.UserResponse;
+import com.hieujavalo.spring_api.service.UserService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("api/v1/admin/users")
+@PreAuthorize("hasRole('ADMIN')")
+@RequiredArgsConstructor
+public class AdminUserController {
+    private final UserService userService;
+
+    @GetMapping
+    public ResponseEntity<List<UserResponse>> getAllUsers() {
+        return ResponseEntity.ok(userService.getAllUsers());
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<UserResponse> getUserById(@PathVariable Long id) {
+        return ResponseEntity.ok(userService.getUserById(id));
+    }
+
+    @PostMapping
+    public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
+        return ResponseEntity.ok(userService.addUser(request));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<UserResponse> updateUser(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateUserRequest request
+    ) {
+        return ResponseEntity.ok(userService.updateUser(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<String> deleteUser(@PathVariable Long id) {
+        userService.deleteUser(id);
+        return ResponseEntity.status(HttpStatus.NO_CONTENT).body("User deleted");
+    }
+}
+```
+Step 4: Run application
+Now run your application and test.

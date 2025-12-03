@@ -24,7 +24,7 @@ public class AuthService {
     private final EmailService emailService;
     private static final long CODE_EXPIRATION_MS = 10 * 60 * 1000; // 10 minutes
 
-    public AuthResponse register(RegisterRequest request, boolean isAdmin) {
+    public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new IllegalArgumentException("Username already exists");
         }
@@ -37,18 +37,13 @@ public class AuthService {
         user.setUsername(request.getUsername());
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setRole(Role.CUSTOMER);
         user.setEnabled(false); // disable until confirmed
 
         // Generate 6-digit numeric verification code
         String code = String.format("%06d", new Random().nextInt(1000000));
         user.setVerificationCode(code);
         user.setVerificationCodeGeneratedAt(System.currentTimeMillis());
-
-        if (isAdmin && request.getRole() != null) {
-            user.setRole(request.getRole());
-        } else {
-            user.setRole(Role.CUSTOMER);
-        }
 
         userRepository.save(user);
 
