@@ -329,7 +329,7 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
-    @GetMapping("/confirm-code")
+    @PostMapping("/confirm-code")
     public ResponseEntity<String> confirmEmailCode(@Valid @RequestBody CodeRequest request) {
         authService.confirmEmail(request.getCode());
         return ResponseEntity.ok("Email confirmed! You can now log in.");
