@@ -36,5 +36,11 @@ public class User {
     private Long verificationCodeGeneratedAt;
 
     @Column
+    private String resetPasswordCode;
+
+    @Column
+    private Long resetPasswordCodeGeneratedAt;
+
+    @Column
     private boolean isEnabled = false; // default false
 }

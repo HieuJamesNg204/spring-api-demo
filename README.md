@@ -1,37 +1,6 @@
-# 6. Verify Email with a verification code
-## Step 1: Add dependency
-Add the following dependency to **pom.xml** to send an email.
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-mail</artifactId>
-</dependency>
-```
-Then reload your project
-## Step 2: Get an app password from Google
-To get an app password from Google, go to your Google Account, then search for "App Password".
-
-![img.png](img.png)
-
-Next, verify that it's you entering the "App passwords" page. Enter your app name, and then click "Create" button - Your app password will be generated.
-
-![img_4.png](img_4.png)
-
-Copy that app password because we'll need it for sending emails in our Spring application.
-## Step 3: Update application.properties
-Add the following properties to **application.properties** to handle email sending.
-```properties
-spring.mail.host=smtp.gmail.com
-spring.mail.port=587
-spring.mail.username=your-email@gmail.com
-spring.mail.password=your-app-password
-spring.mail.properties.mail.smtp.auth=true
-spring.mail.properties.mail.smtp.starttls.enable=true
-spring.mail.properties.mail.smtp.starttls.required=true
-```
-Replace ```your-email@gmail.com``` with your actual email, and ```your-app-password``` with the password you've got on step 2.
-## Step 4: Update User entity
-Add a new field for ```User``` with verification code.
+# 7. Reset Password
+## Step 1: Update user entity
+Update ```User``` class to add more fields related to password reset.
 **entity/User.java**
 ```java
 package com.hieujavalo.spring_api.entity;
@@ -72,12 +41,18 @@ public class User {
     private Long verificationCodeGeneratedAt;
 
     @Column
+    private String resetPasswordCode;
+
+    @Column
+    private Long resetPasswordCodeGeneratedAt;
+
+    @Column
     private boolean isEnabled = false; // default false
 }
 ```
-## Step 5: Create new DTOs
-Create two new DTOs for code and email.
-**dto/CodeRequest.java**
+## Step 2: Create a new DTO
+Create a new DTO to handle password reset request.
+**dto/ResetPasswordRequest.java**
 ```java
 package com.hieujavalo.spring_api.dto;
 
@@ -89,30 +64,16 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class CodeRequest {
+public class ResetPasswordRequest {
     @NotBlank(message = "Code is required")
     private String code;
+
+    @NotBlank(message = "Password is required")
+    private String password;
 }
 ```
-**dto/EmailRequest.java**
-```java
-package com.hieujavalo.spring_api.dto;
-
-import jakarta.validation.constraints.NotBlank;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class EmailRequest {
-    @NotBlank(message = "Email is required")
-    private String email;
-}
-```
-## Step 6: Update user repository
-Update ```UserRepository``` to add two necessary methods for verification code.
+## Step 3: Update user repository
+Update ```UserRepository``` to add a new method to find a user by reset code.
 **repository/UserRepository.java**
 ```java
 package com.hieujavalo.spring_api.repository;
@@ -130,42 +91,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByUsername(String username);
     boolean existsByEmail(String email);
     Optional<User> findByVerificationCode(String code);
+    Optional<User> findByResetPasswordCode(String code);
 }
 ```
-## Step 7: Create new email service and update authentication service
-Create ```EmailService``` to send email.
-**service/EmailService.java**
-```java
-package com.hieujavalo.spring_api.service;
-
-import jakarta.mail.internet.MimeMessage;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
-import org.springframework.stereotype.Service;
-
-@Service
-@Slf4j
-@RequiredArgsConstructor
-public class EmailService {
-    private final JavaMailSender mailSender;
-
-    public void sendEmail(String to, String subject, String body)  {
-        try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setTo(to);
-            helper.setSubject(subject);
-            helper.setText(body, true); // true = HTML enabled
-            mailSender.send(message);
-        } catch (Exception e) {
-            log.error("Failed to send email", e);
-        }
-    }
-}
-```
-Update ```AuthService``` to send verification code via email on registration, and resend the code when needed.
+## Step 4: Update authentication service
+Update ```AuthService``` class to handle password reset logic.
 **service/AuthService.java**
 ```java
 package com.hieujavalo.spring_api.service;
@@ -210,8 +140,9 @@ public class AuthService {
         user.setEnabled(false); // disable until confirmed
 
         // Generate 6-digit numeric verification code
-        int code = new Random().nextInt(900000) + 100000;
-        user.setVerificationCode(String.valueOf(code));
+        String code = String.format("%06d", new Random().nextInt(1000000));
+        user.setVerificationCode(code);
+        user.setVerificationCodeGeneratedAt(System.currentTimeMillis());
 
         if (isAdmin && request.getRole() != null) {
             user.setRole(request.getRole());
@@ -222,9 +153,14 @@ public class AuthService {
         userRepository.save(user);
 
         // Send email
-        String emailBody = "Thank you for registering into the system! " +
-                "To continue, please use this code to verify your registration: <b>" +
-                user.getVerificationCode() + "</b>.<br>Please take note that this code will expire in 10 minutes.";
+        String emailBody = "Hello " + user.getUsername() + ",<br><br>" +
+                "Thank you for registering with our system. " +
+                "To complete your registration, please use the verification code below:<br><br>" +
+                "<b style='font-size:18px;'>" + user.getVerificationCode() + "</b><br><br>" +
+                "This code will expire in 10 minutes for security purposes.<br><br>" +
+                "If you did not request this, please ignore this email.<br><br>" +
+                "Best regards,<br>" +
+                "Hieu JavaLo";
         emailService.sendEmail(
                 user.getEmail(),
                 "Confirm your registration",
@@ -263,6 +199,7 @@ public class AuthService {
 
         user.setEnabled(true);
         user.setVerificationCode(null);
+        user.setVerificationCodeGeneratedAt(null);
         userRepository.save(user);
     }
 
@@ -275,25 +212,64 @@ public class AuthService {
         }
 
         // Generate a new 6-digit code
-        int code = new Random().nextInt(900000) + 100000;
-        user.setVerificationCode(String.valueOf(code));
+        String code = String.format("%06d", new Random().nextInt(1000000));
+        user.setVerificationCode(code);
         user.setVerificationCodeGeneratedAt(System.currentTimeMillis());
 
         userRepository.save(user);
 
         // Send email
-        String emailBody = "Your new verification code is: <b>" + user.getVerificationCode() +
-                "</b>.<br>Please take note that this code will expire in 10 minutes.";
+        String emailBody =  "Hello " + user.getUsername() + ",<br><br>" +
+                "We have received your request to send a new verification code. Your new code is:<br><br>" +
+                "<b style='font-size:18px;'>" + user.getVerificationCode() + "</b><br><br>" +
+                "This code will expire in 10 minutes for security purposes.<br><br>" +
+                "If you did not request this, please ignore this email.<br><br>" +
+                "Best regards,<br>" +
+                "Hieu JavaLo";
         emailService.sendEmail(
                 user.getEmail(),
                 "Resend verification code",
                 emailBody
         );
     }
+
+    public void sendResetPasswordCode(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Email not registered"));
+
+        String code = String.format("%06d", new Random().nextInt(1000000));
+        user.setResetPasswordCode(code);
+        user.setResetPasswordCodeGeneratedAt(System.currentTimeMillis());
+        userRepository.save(user);
+
+        String message = "<p>Hello " + user.getUsername() + ",</p>"
+                + "<p>We have received your request to reset your password. Please use the verification code below:</p>"
+                + "<p style='font-size:18px; font-weight:bold;'>" + code + "</p>"
+                + "<p>This code will expire in 5 minutes for security purposes.</p>"
+                + "<p>If you did not request this, you can safely ignore the email.</p>"
+                + "<p>Best regards,<br/>Your Support Team</p>";
+        emailService.sendEmail(user.getEmail(), "Password Reset Request", message);
+    }
+
+    public void resetPassword(String code, String newPassword) {
+        User user = userRepository.findByResetPasswordCode(code)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid reset code"));
+
+        long now = System.currentTimeMillis();
+        if (user.getResetPasswordCodeGeneratedAt() == null ||
+                now - user.getResetPasswordCodeGeneratedAt() > 5 * 60 * 1000) { // 5 min
+            throw new IllegalArgumentException("Reset code expired");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setResetPasswordCode(null);
+        user.setResetPasswordCodeGeneratedAt(null);
+        userRepository.save(user);
+    }
 }
 ```
-## Step 8: Update authentication controller
-Finally, update the ```AuthController```.
+## Step 5: Update authentication controller
+Lastly, update the authentication controller to add new endpoints for resetting passwords.
 **controller/AuthController.java**
 ```java
 package com.hieujavalo.spring_api.controller;
@@ -347,6 +323,24 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/forgot-password")
+    public ResponseEntity<String> forgotPassword(@RequestBody EmailRequest request) {
+        authService.sendResetPasswordCode(request.getEmail());
+        return ResponseEntity.ok("Reset code sent to your email!");
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<String> resetPassword(@RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request.getCode(), request.getPassword());
+        return ResponseEntity.ok("Password reset successful!");
+    }
+
+    @PostMapping("/resend-reset-code")
+    public ResponseEntity<String> resendPasswordResetCode(@RequestBody EmailRequest request) {
+        authService.sendResetPasswordCode(request.getEmail());
+        return ResponseEntity.ok("Reset code resent! Check your email.");
+    }
+
     @GetMapping("/profile")
     public ResponseEntity<ProfileResponse> getProfile(@AuthenticationPrincipal User user) {
         ProfileResponse response = new ProfileResponse(user.getUsername(), user.getEmail(), user.getRole());
@@ -354,5 +348,5 @@ public class AuthController {
     }
 }
 ```
-## Step 9: Run application
-Now run your Spring application to test if it works.
+## Step 6: Run application
+Now run your Spring application to test the newly added feature.

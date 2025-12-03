@@ -49,6 +49,24 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/forgot-password")
+    public ResponseEntity<String> forgotPassword(@RequestBody EmailRequest request) {
+        authService.sendResetPasswordCode(request.getEmail());
+        return ResponseEntity.ok("Reset code sent to your email!");
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<String> resetPassword(@RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request.getCode(), request.getPassword());
+        return ResponseEntity.ok("Password reset successful!");
+    }
+
+    @PostMapping("/resend-reset-code")
+    public ResponseEntity<String> resendPasswordResetCode(@RequestBody EmailRequest request) {
+        authService.sendResetPasswordCode(request.getEmail());
+        return ResponseEntity.ok("Reset code resent! Check your email.");
+    }
+
     @GetMapping("/profile")
     public ResponseEntity<ProfileResponse> getProfile(@AuthenticationPrincipal User user) {
         ProfileResponse response = new ProfileResponse(user.getUsername(), user.getEmail(), user.getRole());

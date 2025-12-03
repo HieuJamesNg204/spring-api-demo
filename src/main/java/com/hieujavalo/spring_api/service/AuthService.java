@@ -40,8 +40,9 @@ public class AuthService {
         user.setEnabled(false); // disable until confirmed
 
         // Generate 6-digit numeric verification code
-        int code = new Random().nextInt(900000) + 100000;
-        user.setVerificationCode(String.valueOf(code));
+        String code = String.format("%06d", new Random().nextInt(1000000));
+        user.setVerificationCode(code);
+        user.setVerificationCodeGeneratedAt(System.currentTimeMillis());
 
         if (isAdmin && request.getRole() != null) {
             user.setRole(request.getRole());
@@ -52,9 +53,14 @@ public class AuthService {
         userRepository.save(user);
 
         // Send email
-        String emailBody = "Thank you for registering into the system! " +
-                "To continue, please use this code to verify your registration: <b>" +
-                user.getVerificationCode() + "</b>.<br>Please take note that this code will expire in 10 minutes.";
+        String emailBody = "Hello " + user.getUsername() + ",<br><br>" +
+                "Thank you for registering with our system. " +
+                "To complete your registration, please use the verification code below:<br><br>" +
+                "<b style='font-size:18px;'>" + user.getVerificationCode() + "</b><br><br>" +
+                "This code will expire in 10 minutes for security purposes.<br><br>" +
+                "If you did not request this, please ignore this email.<br><br>" +
+                "Best regards,<br>" +
+                "Hieu JavaLo";
         emailService.sendEmail(
                 user.getEmail(),
                 "Confirm your registration",
@@ -93,6 +99,7 @@ public class AuthService {
 
         user.setEnabled(true);
         user.setVerificationCode(null);
+        user.setVerificationCodeGeneratedAt(null);
         userRepository.save(user);
     }
 
@@ -105,19 +112,58 @@ public class AuthService {
         }
 
         // Generate a new 6-digit code
-        int code = new Random().nextInt(900000) + 100000;
-        user.setVerificationCode(String.valueOf(code));
+        String code = String.format("%06d", new Random().nextInt(1000000));
+        user.setVerificationCode(code);
         user.setVerificationCodeGeneratedAt(System.currentTimeMillis());
 
         userRepository.save(user);
 
         // Send email
-        String emailBody = "Your new verification code is: <b>" + user.getVerificationCode() +
-                "</b>.<br>Please take note that this code will expire in 10 minutes.";
+        String emailBody =  "Hello " + user.getUsername() + ",<br><br>" +
+                "We have received your request to send a new verification code. Your new code is:<br><br>" +
+                "<b style='font-size:18px;'>" + user.getVerificationCode() + "</b><br><br>" +
+                "This code will expire in 10 minutes for security purposes.<br><br>" +
+                "If you did not request this, please ignore this email.<br><br>" +
+                "Best regards,<br>" +
+                "Hieu JavaLo";
         emailService.sendEmail(
                 user.getEmail(),
                 "Resend verification code",
                 emailBody
         );
+    }
+
+    public void sendResetPasswordCode(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Email not registered"));
+
+        String code = String.format("%06d", new Random().nextInt(1000000));
+        user.setResetPasswordCode(code);
+        user.setResetPasswordCodeGeneratedAt(System.currentTimeMillis());
+        userRepository.save(user);
+
+        String message = "<p>Hello " + user.getUsername() + ",</p>"
+                + "<p>We have received your request to reset your password. Please use the verification code below:</p>"
+                + "<p style='font-size:18px; font-weight:bold;'>" + code + "</p>"
+                + "<p>This code will expire in 5 minutes for security purposes.</p>"
+                + "<p>If you did not request this, you can safely ignore the email.</p>"
+                + "<p>Best regards,<br/>Your Support Team</p>";
+        emailService.sendEmail(user.getEmail(), "Password Reset Request", message);
+    }
+
+    public void resetPassword(String code, String newPassword) {
+        User user = userRepository.findByResetPasswordCode(code)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid reset code"));
+
+        long now = System.currentTimeMillis();
+        if (user.getResetPasswordCodeGeneratedAt() == null ||
+                now - user.getResetPasswordCodeGeneratedAt() > 5 * 60 * 1000) { // 5 min
+            throw new IllegalArgumentException("Reset code expired");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setResetPasswordCode(null);
+        user.setResetPasswordCodeGeneratedAt(null);
+        userRepository.save(user);
     }
 }
