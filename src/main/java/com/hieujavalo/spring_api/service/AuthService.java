@@ -1,8 +1,6 @@
 package com.hieujavalo.spring_api.service;
 
-import com.hieujavalo.spring_api.dto.AuthResponse;
-import com.hieujavalo.spring_api.dto.LoginRequest;
-import com.hieujavalo.spring_api.dto.RegisterRequest;
+import com.hieujavalo.spring_api.dto.*;
 import com.hieujavalo.spring_api.entity.User;
 import com.hieujavalo.spring_api.enums.Role;
 import com.hieujavalo.spring_api.repository.UserRepository;
@@ -140,7 +138,7 @@ public class AuthService {
         String message = "<p>Hello " + user.getUsername() + ",</p>"
                 + "<p>We have received your request to reset your password. Please use the verification code below:</p>"
                 + "<p style='font-size:18px; font-weight:bold;'>" + code + "</p>"
-                + "<p>This code will expire in 5 minutes for security purposes.</p>"
+                + "<p>This code will expire in 10 minutes for security purposes.</p>"
                 + "<p>If you did not request this, you can safely ignore the email.</p>"
                 + "<p>Best regards,<br/>Your Support Team</p>";
         emailService.sendEmail(user.getEmail(), "Password Reset Request", message);
@@ -152,13 +150,94 @@ public class AuthService {
 
         long now = System.currentTimeMillis();
         if (user.getResetPasswordCodeGeneratedAt() == null ||
-                now - user.getResetPasswordCodeGeneratedAt() > 5 * 60 * 1000) { // 5 min
+                now - user.getResetPasswordCodeGeneratedAt() > CODE_EXPIRATION_MS) {
             throw new IllegalArgumentException("Reset code expired");
         }
 
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setResetPasswordCode(null);
         user.setResetPasswordCodeGeneratedAt(null);
+        userRepository.save(user);
+    }
+
+    public void changeEmail(User user, EmailRequest request) {
+        String email = request.getEmail();
+
+        if (userRepository.existsByEmail(email)) {
+            throw new IllegalArgumentException("Email already taken");
+        }
+
+        String code = String.format("%06d", new Random().nextInt(1000000));
+
+        user.setPendingEmail(email);
+        user.setEmailChangeCode(code);
+        user.setEmailChangeCodeGeneratedAt(System.currentTimeMillis());
+
+        userRepository.save(user);
+
+        String emailBody =  "Hello " + user.getUsername() + ",<br><br>" +
+                "We have received your new email address. To secure your new email, please use the verification " +
+                "code below:<br><br>" +
+                "<b style='font-size:18px;'>" + user.getEmailChangeCode() + "</b><br><br>" +
+                "This code will expire in 10 minutes for security purposes.<br><br>" +
+                "If you did not request this, please ignore this email.<br><br>" +
+                "Best regards,<br>" +
+                "Hieu JavaLo";
+        emailService.sendEmail(
+                email,
+                "Confirm your new email address",
+                emailBody
+        );
+    }
+
+    public void confirmEmailChange(User user, CodeRequest request) {
+        long now = System.currentTimeMillis();
+        if (user.getEmailChangeCodeGeneratedAt() == null ||
+                now - user.getEmailChangeCodeGeneratedAt() > CODE_EXPIRATION_MS) {
+            throw new IllegalArgumentException("Email change code expired");
+        }
+
+        if (!request.getCode().equals(user.getEmailChangeCode())) {
+            throw new IllegalArgumentException("Invalid email change code");
+        }
+
+        user.setEmail(user.getPendingEmail());
+
+        user.setPendingEmail(null);
+        user.setEmailChangeCode(null);
+        user.setEmailChangeCodeGeneratedAt(null);
+
+        userRepository.save(user);
+    }
+
+    public void resendEmailChangeCode(User user) {
+        String code = String.format("%06d", new Random().nextInt(1000000));
+
+        user.setEmailChangeCode(code);
+        user.setEmailChangeCodeGeneratedAt(System.currentTimeMillis());
+        userRepository.save(user);
+
+        String emailBody =  "Hello " + user.getUsername() + ",<br><br>" +
+                "We have received your new email address. To secure your new email, please use the verification " +
+                "code below:<br><br>" +
+                "<b style='font-size:18px;'>" + user.getEmailChangeCode() + "</b><br><br>" +
+                "This code will expire in 10 minutes for security purposes.<br><br>" +
+                "If you did not request this, please ignore this email.<br><br>" +
+                "Best regards,<br>" +
+                "Hieu JavaLo";
+        emailService.sendEmail(
+                user.getPendingEmail(),
+                "Confirm your new email address",
+                emailBody
+        );
+    }
+
+    public void changePassword(User user, ChangePasswordRequest request) {
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+            throw new IllegalArgumentException("Invalid password");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
     }
 }

@@ -9,11 +9,11 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ResetPasswordRequest {
-    @NotBlank(message = "Code is required")
-    private String code;
+public class ChangePasswordRequest {
+    @NotBlank(message = "Current password is required")
+    private String currentPassword;
 
-    @NotBlank(message = "Password is required")
+    @NotBlank(message = "New password is required")
     @Size(min = 8, message = "Password must be at least 8 characters long")
-    private String password;
+    private String newPassword;
 }

@@ -1,122 +1,95 @@
-# 8. Develop user management for admins
-## Step 1: Update and create DTOs
-First, remove the ```role``` field in ```RegisterRequest```.
-**dto/RegisterRequest.java**
+# 9. Customer updating emails and passwords
+## Step 1: Update User entity
+First, add some fields for `User` to handle email change, with `pendingEmail` used for saving the new email that has not verified yet.
+**entity/User.java**
 ```java
-package com.hieujavalo.spring_api.dto;
-
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class RegisterRequest {
-    @NotBlank(message = "Username is required")
-    private String username;
-
-    @NotBlank(message = "Email is required")
-    @Email
-    private String email;
-
-    @NotBlank(message = "Password is required")
-    @Size(min = 8, message = "Password must be at least 8 characters long")
-    private String password;
-}
-```
-After that, create new DTOs to handle requests and responses related to creation and update of users.
-**dto/CreateUserRequest.java**
-```java
-package com.hieujavalo.spring_api.dto;
+package com.hieujavalo.spring_api.entity;
 
 import com.hieujavalo.spring_api.enums.Role;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+@Entity
+@Table(name = "user")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class CreateUserRequest {
-    @NotBlank(message = "Username is required")
-    private String username;
-
-    @NotBlank(message = "Email is required")
-    @Email
-    private String email;
-
-    @NotBlank(message = "Password is required")
-    @Size(min = 8, message = "Password must be at least 8 characters long")
-    private String password;
-
-    @NotNull(message = "Role is required")
-    private Role role;
-}
-```
-**dto/UpdateUserRequest.java**
-```java
-package com.hieujavalo.spring_api.dto;
-
-import com.hieujavalo.spring_api.enums.Role;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class UpdateUserRequest {
-    private String email;
-    private String password;
-    private Role role;
-}
-```
-**dto/UserResponse.java**
-```java
-package com.hieujavalo.spring_api.dto;
-
-import com.hieujavalo.spring_api.entity.User;
-import com.hieujavalo.spring_api.enums.Role;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class UserResponse {
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(unique = true, nullable = false)
     private String username;
+
+    @Column(nullable = false)
+    private String password;
+
+    @Column(unique = true, nullable = false)
     private String email;
+
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
     private Role role;
 
-    public static UserResponse fromUser(User user) {
-        return new UserResponse(
-                user.getId(),
-                user.getUsername(),
-                user.getEmail(),
-                user.getRole()
-        );
-    }
+    @Column
+    private String verificationCode;
+
+    @Column
+    private Long verificationCodeGeneratedAt;
+
+    @Column
+    private String resetPasswordCode;
+
+    @Column
+    private Long resetPasswordCodeGeneratedAt;
+
+    @Column
+    private String emailChangeCode;
+
+    @Column
+    private Long emailChangeCodeGeneratedAt;
+
+    @Column
+    private String pendingEmail;
+
+    @Column
+    private boolean isEnabled = false;
 }
 ```
-## Step 2: Update services
-Next, update ```AuthService.register()``` to reserve it only for public registration.
+## Step 2: Create a new DTO
+Add a new DTO for password change request.
+**dto/ChangePasswordRequest.java**
+```java
+package com.hieujavalo.spring_api.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class ChangePasswordRequest {
+    @NotBlank(message = "Current password is required")
+    private String currentPassword;
+
+    @NotBlank(message = "New password is required")
+    @Size(min = 8, message = "Password must be at least 8 characters long")
+    private String newPassword;
+}
+```
+## Step 3: Update authentication service
+Update `AuthService` to handle email and password change logics.
 **service/AuthService.java**
 ```java
 package com.hieujavalo.spring_api.service;
 
-import com.hieujavalo.spring_api.dto.AuthResponse;
-import com.hieujavalo.spring_api.dto.LoginRequest;
-import com.hieujavalo.spring_api.dto.RegisterRequest;
+import com.hieujavalo.spring_api.dto.*;
 import com.hieujavalo.spring_api.entity.User;
 import com.hieujavalo.spring_api.enums.Role;
 import com.hieujavalo.spring_api.repository.UserRepository;
@@ -254,7 +227,7 @@ public class AuthService {
         String message = "<p>Hello " + user.getUsername() + ",</p>"
                 + "<p>We have received your request to reset your password. Please use the verification code below:</p>"
                 + "<p style='font-size:18px; font-weight:bold;'>" + code + "</p>"
-                + "<p>This code will expire in 5 minutes for security purposes.</p>"
+                + "<p>This code will expire in 10 minutes for security purposes.</p>"
                 + "<p>If you did not request this, you can safely ignore the email.</p>"
                 + "<p>Best regards,<br/>Your Support Team</p>";
         emailService.sendEmail(user.getEmail(), "Password Reset Request", message);
@@ -266,7 +239,7 @@ public class AuthService {
 
         long now = System.currentTimeMillis();
         if (user.getResetPasswordCodeGeneratedAt() == null ||
-                now - user.getResetPasswordCodeGeneratedAt() > 5 * 60 * 1000) { // 5 min
+                now - user.getResetPasswordCodeGeneratedAt() > CODE_EXPIRATION_MS) {
             throw new IllegalArgumentException("Reset code expired");
         }
 
@@ -275,89 +248,91 @@ public class AuthService {
         user.setResetPasswordCodeGeneratedAt(null);
         userRepository.save(user);
     }
+
+    public void changeEmail(User user, EmailRequest request) {
+        String email = request.getEmail();
+
+        if (userRepository.existsByEmail(email)) {
+            throw new IllegalArgumentException("Email already taken");
+        }
+
+        String code = String.format("%06d", new Random().nextInt(1000000));
+
+        user.setPendingEmail(email);
+        user.setEmailChangeCode(code);
+        user.setEmailChangeCodeGeneratedAt(System.currentTimeMillis());
+
+        userRepository.save(user);
+
+        String emailBody =  "Hello " + user.getUsername() + ",<br><br>" +
+                "We have received your new email address. To secure your new email, please use the verification " +
+                "code below:<br><br>" +
+                "<b style='font-size:18px;'>" + user.getEmailChangeCode() + "</b><br><br>" +
+                "This code will expire in 10 minutes for security purposes.<br><br>" +
+                "If you did not request this, please ignore this email.<br><br>" +
+                "Best regards,<br>" +
+                "Hieu JavaLo";
+        emailService.sendEmail(
+                email,
+                "Confirm your new email address",
+                emailBody
+        );
+    }
+
+    public void confirmEmailChange(User user, CodeRequest request) {
+        long now = System.currentTimeMillis();
+        if (user.getEmailChangeCodeGeneratedAt() == null ||
+                now - user.getEmailChangeCodeGeneratedAt() > CODE_EXPIRATION_MS) {
+            throw new IllegalArgumentException("Email change code expired");
+        }
+
+        if (!request.getCode().equals(user.getEmailChangeCode())) {
+            throw new IllegalArgumentException("Invalid email change code");
+        }
+
+        user.setEmail(user.getPendingEmail());
+
+        user.setPendingEmail(null);
+        user.setEmailChangeCode(null);
+        user.setEmailChangeCodeGeneratedAt(null);
+
+        userRepository.save(user);
+    }
+
+    public void resendEmailChangeCode(User user) {
+        String code = String.format("%06d", new Random().nextInt(1000000));
+
+        user.setEmailChangeCode(code);
+        user.setEmailChangeCodeGeneratedAt(System.currentTimeMillis());
+        userRepository.save(user);
+
+        String emailBody =  "Hello " + user.getUsername() + ",<br><br>" +
+                "We have received your new email address. To secure your new email, please use the verification " +
+                "code below:<br><br>" +
+                "<b style='font-size:18px;'>" + user.getEmailChangeCode() + "</b><br><br>" +
+                "This code will expire in 10 minutes for security purposes.<br><br>" +
+                "If you did not request this, please ignore this email.<br><br>" +
+                "Best regards,<br>" +
+                "Hieu JavaLo";
+        emailService.sendEmail(
+                user.getPendingEmail(),
+                "Confirm your new email address",
+                emailBody
+        );
+    }
+
+    public void changePassword(User user, ChangePasswordRequest request) {
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+            throw new IllegalArgumentException("Invalid password");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+    }
 }
 ```
-Subsequently, create a new service to handle user management logics.
-```java
-package com.hieujavalo.spring_api.service;
-
-import com.hieujavalo.spring_api.dto.CreateUserRequest;
-import com.hieujavalo.spring_api.dto.UpdateUserRequest;
-import com.hieujavalo.spring_api.dto.UserResponse;
-import com.hieujavalo.spring_api.entity.User;
-import com.hieujavalo.spring_api.exception.ResourceNotFoundException;
-import com.hieujavalo.spring_api.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-
-import java.util.List;
-import java.util.stream.Collectors;
-
-@Service
-@Slf4j
-@RequiredArgsConstructor
-public class UserService {
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-
-    public List<UserResponse> getAllUsers() {
-        return userRepository.findAll()
-                .stream()
-                .map(UserResponse::fromUser)
-                .collect(Collectors.toList());
-    }
-
-    public UserResponse getUserById(Long id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        return UserResponse.fromUser(user);
-    }
-
-    public UserResponse addUser(CreateUserRequest request) {
-        System.out.println(request.getRole());
-
-        User user = new User();
-        user.setUsername(request.getUsername());
-        user.setEmail(request.getEmail());
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setRole(request.getRole());
-        user.setEnabled(true);
-
-        User savedUser = userRepository.save(user);
-        return UserResponse.fromUser(savedUser);
-    }
-
-    public UserResponse updateUser(Long id, UpdateUserRequest request) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
-        if (request.getEmail() != null && !request.getEmail().isBlank()) {
-            user.setEmail(request.getEmail());
-        }
-
-        if (request.getRole() != null) {
-            user.setRole(request.getRole());
-        }
-
-        if (request.getPassword() != null && !request.getPassword().isBlank()) {
-            user.setPassword(passwordEncoder.encode(request.getPassword()));
-        }
-
-        User savedUser = userRepository.save(user);
-        return UserResponse.fromUser(savedUser);
-    }
-
-    public void deleteUser(Long id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        userRepository.delete(user);
-    }
-}
-```
-## Step 3: Update controllers
-As we've modified ```AuthService```, we also need to modify ```AuthController```.
+## Step 4: Update controllers
+Update `AuthController` to add new endpoints for email and password change.
 **controller/AuthController.java**
 ```java
 package com.hieujavalo.spring_api.controller;
@@ -426,62 +401,106 @@ public class AuthController {
         ProfileResponse response = new ProfileResponse(user.getUsername(), user.getEmail(), user.getRole());
         return ResponseEntity.ok(response);
     }
+
+    @PostMapping("/change-email/request")
+    public ResponseEntity<String> requestEmailChange(@Valid @RequestBody EmailRequest request,
+                                                     @AuthenticationPrincipal User user) {
+        authService.changeEmail(user, request);
+        return ResponseEntity.ok("Verification code sent to your new email!");
+    }
+
+    @PostMapping("/change-email/confirm")
+    public ResponseEntity<String> confirmEmailChange(@Valid @RequestBody CodeRequest request,
+                                                     @AuthenticationPrincipal User user) {
+        authService.confirmEmailChange(user, request);
+        return ResponseEntity.ok("Email updated successfully");
+    }
+
+    @PostMapping("/change-email/resend-code")
+    public ResponseEntity<String> resendEmailChangeCode(@AuthenticationPrincipal User user) {
+        authService.resendEmailChangeCode(user);
+        return ResponseEntity.ok("Verification code sent to your new email!");
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<String> changePassword(@Valid @RequestBody ChangePasswordRequest request,
+                                                 @AuthenticationPrincipal User user) {
+        authService.changePassword(user, request);
+        return ResponseEntity.ok("Password changed successfully");
+    }
 }
 ```
-Lastly, create create a dedicated controller with one class-level security rule just for admins.
-**controller/AdminUserController.java**
+## Step 5: Update security configuration
+Update `SecurityConfig` to add new rules so that we can make sure that the new features we've just added are used only by authenticated users.
+**config/SecurityConfig.java**
 ```java
-package com.hieujavalo.spring_api.controller;
+package com.hieujavalo.spring_api.config;
 
-import com.hieujavalo.spring_api.dto.CreateUserRequest;
-import com.hieujavalo.spring_api.dto.UpdateUserRequest;
-import com.hieujavalo.spring_api.dto.UserResponse;
-import com.hieujavalo.spring_api.service.UserService;
-import jakarta.validation.Valid;
+import com.hieujavalo.spring_api.filter.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 
-@RestController
-@RequestMapping("api/v1/admin/users")
-@PreAuthorize("hasRole('ADMIN')")
+@Configuration
+@EnableWebSecurity
 @RequiredArgsConstructor
-public class AdminUserController {
-    private final UserService userService;
+@EnableMethodSecurity(prePostEnabled = true)
+public class SecurityConfig {
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final JwtAuthenticationEntryPoint unauthorizedHandler;
 
-    @GetMapping
-    public ResponseEntity<List<UserResponse>> getAllUsers() {
-        return ResponseEntity.ok(userService.getAllUsers());
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<UserResponse> getUserById(@PathVariable Long id) {
-        return ResponseEntity.ok(userService.getUserById(id));
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(List.of("http://localhost:3000"));
+        config.setAllowedMethods(List.of("GET","POST","PUT","DELETE","PATCH"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 
-    @PostMapping
-    public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
-        return ResponseEntity.ok(userService.addUser(request));
-    }
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http.csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/auth/profile").authenticated()
+                        .requestMatchers("/api/v1/auth/change-email/**").authenticated()
+                        .requestMatchers("/api/v1/auth/change-password").authenticated()
+                        .requestMatchers("/api/v1/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/**").permitAll()
+                        .anyRequest().authenticated()
+                )
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(unauthorizedHandler)
+                )
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
-    @PutMapping("/{id}")
-    public ResponseEntity<UserResponse> updateUser(
-            @PathVariable Long id,
-            @Valid @RequestBody UpdateUserRequest request
-    ) {
-        return ResponseEntity.ok(userService.updateUser(id, request));
-    }
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<String> deleteUser(@PathVariable Long id) {
-        userService.deleteUser(id);
-        return ResponseEntity.status(HttpStatus.NO_CONTENT).body("User deleted");
+        return http.build();
     }
 }
 ```
-## Step 4: Run application
-Now run your application and test.
+## Step 6: Run application
+Now run your application and test the newly added features.

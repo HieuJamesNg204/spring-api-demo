@@ -64,4 +64,31 @@ public class AuthController {
         ProfileResponse response = new ProfileResponse(user.getUsername(), user.getEmail(), user.getRole());
         return ResponseEntity.ok(response);
     }
+
+    @PostMapping("/change-email/request")
+    public ResponseEntity<String> requestEmailChange(@Valid @RequestBody EmailRequest request,
+                                                     @AuthenticationPrincipal User user) {
+        authService.changeEmail(user, request);
+        return ResponseEntity.ok("Verification code sent to your new email!");
+    }
+
+    @PostMapping("/change-email/confirm")
+    public ResponseEntity<String> confirmEmailChange(@Valid @RequestBody CodeRequest request,
+                                                     @AuthenticationPrincipal User user) {
+        authService.confirmEmailChange(user, request);
+        return ResponseEntity.ok("Email updated successfully");
+    }
+
+    @PostMapping("/change-email/resend-code")
+    public ResponseEntity<String> resendEmailChangeCode(@AuthenticationPrincipal User user) {
+        authService.resendEmailChangeCode(user);
+        return ResponseEntity.ok("Verification code sent to your new email!");
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<String> changePassword(@Valid @RequestBody ChangePasswordRequest request,
+                                                 @AuthenticationPrincipal User user) {
+        authService.changePassword(user, request);
+        return ResponseEntity.ok("Password changed successfully");
+    }
 }

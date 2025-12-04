@@ -42,5 +42,14 @@ public class User {
     private Long resetPasswordCodeGeneratedAt;
 
     @Column
-    private boolean isEnabled = false; // default false
+    private String emailChangeCode;
+
+    @Column
+    private Long emailChangeCodeGeneratedAt;
+
+    @Column
+    private String pendingEmail;
+
+    @Column
+    private boolean isEnabled = false;
 }
