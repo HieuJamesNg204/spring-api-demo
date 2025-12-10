@@ -30,8 +30,70 @@ Add the following lines to **main/resources/application.properties**
 jwt.secret=[your_secret_key]
 jwt.expiration=86400000
 ```
-Replace ```[your_secret_key]``` with your 256-bit secret key
-## Step 3: Create User Entity
+Replace ```[your_secret_key]``` with your 256-bit secret key.
+## Step 3: Create a new exception
+Create `UnauthorizedException` to handle exceptions relating to unauthenticated access.
+**exception/UnauthorizedException.java**
+```java
+package com.hieujavalo.spring_api.exception;
+
+public class UnauthorizedException extends RuntimeException {
+    public UnauthorizedException(String message) {
+        super(message);
+    }
+}
+```
+And then add a handler for it.
+**exception/GlobalExceptionHandler.java**
+```java
+package com.hieujavalo.spring_api.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<?> handleNotFound(ResourceNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<?> handleBadRequest(IllegalArgumentException ex) {
+        return ResponseEntity.badRequest()
+                .body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<?> handleUnauthorized(UnauthorizedException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, String>> handleValidationExceptions(
+            MethodArgumentNotValidException ex) {
+        Map<String, String> errors = new HashMap<>();
+
+        ex.getBindingResult().getAllErrors().forEach((error) -> {
+            String fieldName = ((FieldError) error).getField();
+            String errorMessage = error.getDefaultMessage();
+            errors.put(fieldName, errorMessage);
+        });
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errors);
+    }
+}
+```
+## Step 4: Create User Entity
 Add a ```User``` entity to handle user data and authentication.
 **entity/User.java**
 ```java
@@ -62,7 +124,7 @@ public class User {
     private String email;
 }
 ```
-## Step 4: Create User repository
+## Step 5: Create User repository
 Add ```UserRepository``` to interact with ```user``` table in database.
 **repository/UserRepository.java**
 ```java
@@ -81,7 +143,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByEmail(String email);
 }
 ```
-## Step 5: Create DTOs
+## Step 6: Create DTOs
 Create DTOs to handle user requests and responses.
 **dto/RegisterRequest.java**
 ```java
@@ -163,7 +225,7 @@ public class ProfileResponse {
     private String email;
 }
 ```
-## Step 6: Create a utilisation class for JWT
+## Step 7: Create a utilisation class for JWT
 Create a utilisation class for JWT to handle tokens.
 **util/JwtUtil.java**
 ```java
@@ -230,7 +292,7 @@ public class JwtUtil {
     }
 }
 ```
-## Step 7: Create a filter
+## Step 8: Create a filter
 Create ```JwtAuthenticationFilter``` to authenticate users with a header
 **filter/JwtAuthenticationFilter.java**
 ```java
@@ -285,7 +347,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 }
 ```
-## Step 8: Configure security
+## Step 9: Configure security
 First, create a class to use ```401 Unauthorized``` status code for unauthenticated access.
 **config/BodyTypeService.java**
 ```java
@@ -356,7 +418,7 @@ public class SecurityConfig {
     }
 }
 ```
-## Step 9: Create authentication service
+## Step 10: Create authentication service
 Create authentication service to handle login and register logics.
 **service/AuthService.java**
 ```java
@@ -366,6 +428,7 @@ import com.hieujavalo.spring_api.dto.AuthResponse;
 import com.hieujavalo.spring_api.dto.LoginRequest;
 import com.hieujavalo.spring_api.dto.RegisterRequest;
 import com.hieujavalo.spring_api.entity.User;
+import com.hieujavalo.spring_api.exception.UnauthorizedException;
 import com.hieujavalo.spring_api.repository.UserRepository;
 import com.hieujavalo.spring_api.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
@@ -402,10 +465,10 @@ public class AuthService {
 
     public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid credentials"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new IllegalArgumentException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         String token = jwtUtil.generateToken(user.getUsername());
@@ -413,7 +476,7 @@ public class AuthService {
     }
 }
 ```
-## Step 10: Create authentication controller
+## Step 11: Create authentication controller
 Create an authentication controller to handle input.
 **controller/AuthController.java**
 ```java
@@ -458,5 +521,5 @@ public class AuthController {
     }
 }
 ```
-## Step 11: Run application
+## Step 12: Run application
 Now open **SpringBootApiApplication.java** and click the triangle button to run.
