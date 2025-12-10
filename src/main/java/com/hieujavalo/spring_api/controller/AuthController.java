@@ -3,6 +3,7 @@ package com.hieujavalo.spring_api.controller;
 import com.hieujavalo.spring_api.dto.*;
 import com.hieujavalo.spring_api.entity.User;
 import com.hieujavalo.spring_api.service.AuthService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,9 +37,23 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
-        AuthResponse response = authService.login(request);
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request, HttpServletResponse response) {
+        AuthResponse res = authService.login(request, response);
+        return ResponseEntity.ok(res);
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<AuthResponse> refresh(
+            @CookieValue(value = "refreshToken", required = false) String refreshToken
+    ) {
+        AuthResponse response = authService.refreshAccessToken(refreshToken);
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<String> logout(HttpServletResponse response) {
+        authService.logout(response);
+        return ResponseEntity.ok("Logged out!");
     }
 
     @PostMapping("/forgot-password")

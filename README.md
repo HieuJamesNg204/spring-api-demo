@@ -1,90 +1,103 @@
-# 9. Customer updating emails and passwords
-## Step 1: Update User entity
-First, add some fields for `User` to handle email change, with `pendingEmail` used for saving the new email that has not verified yet.
-**entity/User.java**
+# 10. Store Tokens in HTTP-Only
+Storing tokens (especially JWT access/refresh tokens) in localStorage is risky because JavaScript can access it — meaning XSS attacks can steal your tokens.
+This section will explore how to store tokens in HTTP-Only, which is the best alternative.
+## Step 1: Update JWT utilisation
+Update `JwtUtil` with access tokens (short lifetime - 5 minutes) and refresh ones (long lifetime - a week).
+**util/JwtUtil.java**
 ```java
-package com.hieujavalo.spring_api.entity;
+package com.hieujavalo.spring_api.util;
 
-import com.hieujavalo.spring_api.enums.Role;
-import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import com.hieujavalo.spring_api.entity.User;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 
-@Entity
-@Table(name = "user")
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class User {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
 
-    @Column(unique = true, nullable = false)
-    private String username;
+@Component
+@Slf4j
+public class JwtUtil {
+    @Value("${jwt.secret}") // From application.properties
+    private String secret;
 
-    @Column(nullable = false)
-    private String password;
+    @Value("${jwt.access.expiration:300000}") // in ms - 300000 ms = 5 minutes
+    private long accessExpiration;
 
-    @Column(unique = true, nullable = false)
-    private String email;
+    @Value("${jwt.refresh.expiration:604800000}") // a week
+    private long refreshExpiration;
 
-    @Column(nullable = false)
-    @Enumerated(EnumType.STRING)
-    private Role role;
+    private SecretKey getSigningKey() {
+        byte[] decodedKey = secret.getBytes(StandardCharsets.UTF_8);
+        return Keys.hmacShaKeyFor(decodedKey);
+    }
 
-    @Column
-    private String verificationCode;
+    public String generateAccessToken(User user) {
+        return Jwts.builder()
+                .subject(user.getUsername())
+                .claim("role", user.getRole().name())
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + accessExpiration))
+                .signWith(getSigningKey())
+                .compact();
+    }
 
-    @Column
-    private Long verificationCodeGeneratedAt;
+    public String generateRefreshToken(User user) {
+        return Jwts.builder()
+                .subject(user.getUsername())
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + refreshExpiration))
+                .signWith(getSigningKey())
+                .compact();
+    }
 
-    @Column
-    private String resetPasswordCode;
+    public String extractUsername(String token) {
+        try {
+            return Jwts.parser()
+                    .verifyWith(getSigningKey())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload()
+                    .getSubject();
+        } catch (Exception e) {
+            log.error("Error extracting username from token", e);
+            return null;
+        }
+    }
 
-    @Column
-    private Long resetPasswordCodeGeneratedAt;
+    public String extractRole(String token) {
+        try {
+            return Jwts.parser()
+                    .verifyWith(getSigningKey())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload()
+                    .get("role", String.class);
+        } catch (Exception e) {
+            log.error("Error extracting role from token", e);
+            return null;
+        }
+    }
 
-    @Column
-    private String emailChangeCode;
-
-    @Column
-    private Long emailChangeCodeGeneratedAt;
-
-    @Column
-    private String pendingEmail;
-
-    @Column
-    private boolean isEnabled = false;
+    public boolean validateToken(String token) {
+        try {
+            Jwts.parser()
+                    .verifyWith(getSigningKey())
+                    .build()
+                    .parseSignedClaims(token);
+            return true;
+        } catch (Exception e) {
+            log.error("Invalid token", e);
+            return false;
+        }
+    }
 }
 ```
-## Step 2: Create a new DTO
-Add a new DTO for password change request.
-**dto/ChangePasswordRequest.java**
-```java
-package com.hieujavalo.spring_api.dto;
-
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class ChangePasswordRequest {
-    @NotBlank(message = "Current password is required")
-    private String currentPassword;
-
-    @NotBlank(message = "New password is required")
-    @Size(min = 8, message = "Password must be at least 8 characters long")
-    private String newPassword;
-}
-```
-## Step 3: Update authentication service
-Update `AuthService` to handle email and password change logics.
+## Step 2: Update authentication service
+Update authentication to handle the logics of refresh tokens.
 **service/AuthService.java**
 ```java
 package com.hieujavalo.spring_api.service;
@@ -92,10 +105,15 @@ package com.hieujavalo.spring_api.service;
 import com.hieujavalo.spring_api.dto.*;
 import com.hieujavalo.spring_api.entity.User;
 import com.hieujavalo.spring_api.enums.Role;
+import com.hieujavalo.spring_api.exception.ResourceNotFoundException;
+import com.hieujavalo.spring_api.exception.UnauthorizedException;
 import com.hieujavalo.spring_api.repository.UserRepository;
 import com.hieujavalo.spring_api.util.JwtUtil;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -153,20 +171,61 @@ public class AuthService {
                 "Registration successful! Check your email to confirm.");
     }
 
-    public AuthResponse login(LoginRequest request) {
+    public AuthResponse login(LoginRequest request, HttpServletResponse response) {
         User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid credentials"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
 
         if (!user.isEnabled()) {
             throw new IllegalArgumentException("Email not confirmed yet");
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new IllegalArgumentException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
-        String token = jwtUtil.generateToken(user);
-        return new AuthResponse(token, user.getUsername(), user.getRole(), "Login successful!");
+        String accessToken = jwtUtil.generateAccessToken(user);
+        String refreshToken = jwtUtil.generateRefreshToken(user);
+
+        ResponseCookie cookie = ResponseCookie.from("refreshToken", refreshToken)
+                .httpOnly(true)
+                .secure(true)
+                .sameSite("Strict")
+                .path("/api/v1/auth/refresh")
+                .maxAge(7 * 24 * 3600)
+                .build();
+
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+
+        return new AuthResponse(accessToken, user.getUsername(), user.getRole(), "Login successful!");
+    }
+
+    public void logout(HttpServletResponse response) {
+        ResponseCookie cookie = ResponseCookie.from("refreshToken", "")
+                .httpOnly(true)
+                .secure(true)
+                .sameSite("Strict")
+                .path("/api/v1/auth/refresh")
+                .maxAge(0)
+                .build();
+
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    }
+
+    public AuthResponse refreshAccessToken(String refreshToken) {
+        if (refreshToken == null) {
+            throw new UnauthorizedException("Refresh token missing");
+        }
+
+        if (!jwtUtil.validateToken(refreshToken)) {
+            throw new UnauthorizedException("Invalid refresh token");
+        }
+
+        String username = jwtUtil.extractUsername(refreshToken);
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        String newAccessToken = jwtUtil.generateAccessToken(user);
+        return new AuthResponse(newAccessToken, username, user.getRole(), "Token refreshed");
     }
 
     public void confirmEmail(String code) {
@@ -331,8 +390,8 @@ public class AuthService {
     }
 }
 ```
-## Step 4: Update controllers
-Update `AuthController` to add new endpoints for email and password change.
+## Step 3: Update authentication controller
+Add new endpoints to the authentication controller in order to refresh tokens and log out.
 **controller/AuthController.java**
 ```java
 package com.hieujavalo.spring_api.controller;
@@ -340,6 +399,7 @@ package com.hieujavalo.spring_api.controller;
 import com.hieujavalo.spring_api.dto.*;
 import com.hieujavalo.spring_api.entity.User;
 import com.hieujavalo.spring_api.service.AuthService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -373,9 +433,23 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
-        AuthResponse response = authService.login(request);
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request, HttpServletResponse response) {
+        AuthResponse res = authService.login(request, response);
+        return ResponseEntity.ok(res);
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<AuthResponse> refresh(
+            @CookieValue(value = "refreshToken", required = false) String refreshToken
+    ) {
+        AuthResponse response = authService.refreshAccessToken(refreshToken);
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<String> logout(HttpServletResponse response) {
+        authService.logout(response);
+        return ResponseEntity.ok("Logged out!");
     }
 
     @PostMapping("/forgot-password")
@@ -430,77 +504,5 @@ public class AuthController {
     }
 }
 ```
-## Step 5: Update security configuration
-Update `SecurityConfig` to add new rules so that we can make sure that the new features we've just added are used only by authenticated users.
-**config/SecurityConfig.java**
-```java
-package com.hieujavalo.spring_api.config;
-
-import com.hieujavalo.spring_api.filter.JwtAuthenticationFilter;
-import lombok.RequiredArgsConstructor;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
-import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
-import java.util.List;
-
-@Configuration
-@EnableWebSecurity
-@RequiredArgsConstructor
-@EnableMethodSecurity(prePostEnabled = true)
-public class SecurityConfig {
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
-    private final JwtAuthenticationEntryPoint unauthorizedHandler;
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
-
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:3000"));
-        config.setAllowedMethods(List.of("GET","POST","PUT","DELETE","PATCH"));
-        config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(true);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-        return source;
-    }
-
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http.csrf(csrf -> csrf.disable())
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/api/v1/auth/profile").authenticated()
-                        .requestMatchers("/api/v1/auth/change-email/**").authenticated()
-                        .requestMatchers("/api/v1/auth/change-password").authenticated()
-                        .requestMatchers("/api/v1/auth/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/**").permitAll()
-                        .anyRequest().authenticated()
-                )
-                .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint(unauthorizedHandler)
-                )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-
-        return http.build();
-    }
-}
-```
-## Step 6: Run application
-Now run your application and test the newly added features.
+## Step 4: Run application
+Now run your application and test

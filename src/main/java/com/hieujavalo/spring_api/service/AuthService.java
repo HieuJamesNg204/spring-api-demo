@@ -3,10 +3,15 @@ package com.hieujavalo.spring_api.service;
 import com.hieujavalo.spring_api.dto.*;
 import com.hieujavalo.spring_api.entity.User;
 import com.hieujavalo.spring_api.enums.Role;
+import com.hieujavalo.spring_api.exception.ResourceNotFoundException;
+import com.hieujavalo.spring_api.exception.UnauthorizedException;
 import com.hieujavalo.spring_api.repository.UserRepository;
 import com.hieujavalo.spring_api.util.JwtUtil;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -64,20 +69,61 @@ public class AuthService {
                 "Registration successful! Check your email to confirm.");
     }
 
-    public AuthResponse login(LoginRequest request) {
+    public AuthResponse login(LoginRequest request, HttpServletResponse response) {
         User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid credentials"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
 
         if (!user.isEnabled()) {
             throw new IllegalArgumentException("Email not confirmed yet");
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new IllegalArgumentException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
-        String token = jwtUtil.generateToken(user);
-        return new AuthResponse(token, user.getUsername(), user.getRole(), "Login successful!");
+        String accessToken = jwtUtil.generateAccessToken(user);
+        String refreshToken = jwtUtil.generateRefreshToken(user);
+
+        ResponseCookie cookie = ResponseCookie.from("refreshToken", refreshToken)
+                .httpOnly(true)
+                .secure(true)
+                .sameSite("Strict")
+                .path("/api/v1/auth/refresh")
+                .maxAge(7 * 24 * 3600)
+                .build();
+
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+
+        return new AuthResponse(accessToken, user.getUsername(), user.getRole(), "Login successful!");
+    }
+
+    public void logout(HttpServletResponse response) {
+        ResponseCookie cookie = ResponseCookie.from("refreshToken", "")
+                .httpOnly(true)
+                .secure(true)
+                .sameSite("Strict")
+                .path("/api/v1/auth/refresh")
+                .maxAge(0)
+                .build();
+
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    }
+
+    public AuthResponse refreshAccessToken(String refreshToken) {
+        if (refreshToken == null) {
+            throw new UnauthorizedException("Refresh token missing");
+        }
+
+        if (!jwtUtil.validateToken(refreshToken)) {
+            throw new UnauthorizedException("Invalid refresh token");
+        }
+
+        String username = jwtUtil.extractUsername(refreshToken);
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        String newAccessToken = jwtUtil.generateAccessToken(user);
+        return new AuthResponse(newAccessToken, username, user.getRole(), "Token refreshed");
     }
 
     public void confirmEmail(String code) {
