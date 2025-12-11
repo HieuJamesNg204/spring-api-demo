@@ -3,6 +3,7 @@ package com.hieujavalo.spring_api.service;
 import com.hieujavalo.spring_api.dto.*;
 import com.hieujavalo.spring_api.entity.User;
 import com.hieujavalo.spring_api.enums.Role;
+import com.hieujavalo.spring_api.exception.UnauthorizedException;
 import com.hieujavalo.spring_api.repository.UserRepository;
 import com.hieujavalo.spring_api.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
@@ -66,14 +67,14 @@ public class AuthService {
 
     public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid credentials"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
 
         if (!user.isEnabled()) {
             throw new IllegalArgumentException("Email not confirmed yet");
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new IllegalArgumentException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         String token = jwtUtil.generateToken(user);
